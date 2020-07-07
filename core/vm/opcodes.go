@@ -70,7 +70,7 @@ const (
 	SHR
 	SAR
 
-	SHA3 = 0x20
+	SHA3 OpCode = 0x20
 )
 
 // 0x30 range - closure state.
@@ -90,6 +90,7 @@ const (
 	EXTCODECOPY
 	RETURNDATASIZE
 	RETURNDATACOPY
+	EXTCODEHASH
 )
 
 // 0x40 range - block operations.
@@ -100,22 +101,27 @@ const (
 	NUMBER
 	DIFFICULTY
 	GASLIMIT
+	CHAINID     OpCode = 0x46
+	SELFBALANCE OpCode = 0x47
 )
 
 // 0x50 range - 'storage' and execution.
 const (
-	POP OpCode = 0x50 + iota
-	MLOAD
-	MSTORE
-	MSTORE8
-	SLOAD
-	SSTORE
-	JUMP
-	JUMPI
-	PC
-	MSIZE
-	GAS
-	JUMPDEST
+	POP       OpCode = 0x50
+	MLOAD     OpCode = 0x51
+	MSTORE    OpCode = 0x52
+	MSTORE8   OpCode = 0x53
+	SLOAD     OpCode = 0x54
+	SSTORE    OpCode = 0x55
+	JUMP      OpCode = 0x56
+	JUMPI     OpCode = 0x57
+	PC        OpCode = 0x58
+	MSIZE     OpCode = 0x59
+	GAS       OpCode = 0x5a
+	JUMPDEST  OpCode = 0x5b
+	BEGINSUB  OpCode = 0x5c
+	RETURNSUB OpCode = 0x5d
+	JUMPSUB   OpCode = 0x5e
 )
 
 // 0x60 range.
@@ -209,10 +215,10 @@ const (
 	CALLCODE
 	RETURN
 	DELEGATECALL
-	STATICCALL = 0xfa
-
-	REVERT       = 0xfd
-	SELFDESTRUCT = 0xff
+	CREATE2
+	STATICCALL   OpCode = 0xfa
+	REVERT       OpCode = 0xfd
+	SELFDESTRUCT OpCode = 0xff
 )
 
 // Since the opcodes aren't all in order we can't use a regular slice.
@@ -266,14 +272,17 @@ var opCodeToString = map[OpCode]string{
 	EXTCODECOPY:    "EXTCODECOPY",
 	RETURNDATASIZE: "RETURNDATASIZE",
 	RETURNDATACOPY: "RETURNDATACOPY",
+	EXTCODEHASH:    "EXTCODEHASH",
 
 	// 0x40 range - block operations.
-	BLOCKHASH:  "BLOCKHASH",
-	COINBASE:   "COINBASE",
-	TIMESTAMP:  "TIMESTAMP",
-	NUMBER:     "NUMBER",
-	DIFFICULTY: "DIFFICULTY",
-	GASLIMIT:   "GASLIMIT",
+	BLOCKHASH:   "BLOCKHASH",
+	COINBASE:    "COINBASE",
+	TIMESTAMP:   "TIMESTAMP",
+	NUMBER:      "NUMBER",
+	DIFFICULTY:  "DIFFICULTY",
+	GASLIMIT:    "GASLIMIT",
+	CHAINID:     "CHAINID",
+	SELFBALANCE: "SELFBALANCE",
 
 	// 0x50 range - 'storage' and execution.
 	POP: "POP",
@@ -290,6 +299,10 @@ var opCodeToString = map[OpCode]string{
 	MSIZE:    "MSIZE",
 	GAS:      "GAS",
 	JUMPDEST: "JUMPDEST",
+
+	BEGINSUB:  "BEGINSUB",
+	JUMPSUB:   "JUMPSUB",
+	RETURNSUB: "RETURNSUB",
 
 	// 0x60 range - push.
 	PUSH1:  "PUSH1",
@@ -370,6 +383,7 @@ var opCodeToString = map[OpCode]string{
 	RETURN:       "RETURN",
 	CALLCODE:     "CALLCODE",
 	DELEGATECALL: "DELEGATECALL",
+	CREATE2:      "CREATE2",
 	STATICCALL:   "STATICCALL",
 	REVERT:       "REVERT",
 	SELFDESTRUCT: "SELFDESTRUCT",
@@ -382,7 +396,7 @@ var opCodeToString = map[OpCode]string{
 func (op OpCode) String() string {
 	str := opCodeToString[op]
 	if len(str) == 0 {
-		return fmt.Sprintf("Missing opcode 0x%x", int(op))
+		return fmt.Sprintf("opcode 0x%x not defined", int(op))
 	}
 
 	return str
@@ -424,6 +438,7 @@ var stringToOp = map[string]OpCode{
 	"CALLDATALOAD":   CALLDATALOAD,
 	"CALLDATASIZE":   CALLDATASIZE,
 	"CALLDATACOPY":   CALLDATACOPY,
+	"CHAINID":        CHAINID,
 	"DELEGATECALL":   DELEGATECALL,
 	"STATICCALL":     STATICCALL,
 	"CODESIZE":       CODESIZE,
@@ -433,12 +448,14 @@ var stringToOp = map[string]OpCode{
 	"EXTCODECOPY":    EXTCODECOPY,
 	"RETURNDATASIZE": RETURNDATASIZE,
 	"RETURNDATACOPY": RETURNDATACOPY,
+	"EXTCODEHASH":    EXTCODEHASH,
 	"BLOCKHASH":      BLOCKHASH,
 	"COINBASE":       COINBASE,
 	"TIMESTAMP":      TIMESTAMP,
 	"NUMBER":         NUMBER,
 	"DIFFICULTY":     DIFFICULTY,
 	"GASLIMIT":       GASLIMIT,
+	"SELFBALANCE":    SELFBALANCE,
 	"POP":            POP,
 	"MLOAD":          MLOAD,
 	"MSTORE":         MSTORE,
@@ -451,6 +468,9 @@ var stringToOp = map[string]OpCode{
 	"MSIZE":          MSIZE,
 	"GAS":            GAS,
 	"JUMPDEST":       JUMPDEST,
+	"BEGINSUB":       BEGINSUB,
+	"RETURNSUB":      RETURNSUB,
+	"JUMPSUB":        JUMPSUB,
 	"PUSH1":          PUSH1,
 	"PUSH2":          PUSH2,
 	"PUSH3":          PUSH3,
@@ -521,6 +541,7 @@ var stringToOp = map[string]OpCode{
 	"LOG3":           LOG3,
 	"LOG4":           LOG4,
 	"CREATE":         CREATE,
+	"CREATE2":        CREATE2,
 	"CALL":           CALL,
 	"RETURN":         RETURN,
 	"CALLCODE":       CALLCODE,

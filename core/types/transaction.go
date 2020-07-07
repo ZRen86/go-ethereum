@@ -25,6 +25,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rlp"
 )
@@ -41,6 +42,7 @@ type Transaction struct {
 	hash atomic.Value
 	size atomic.Value
 	from atomic.Value
+	cost atomic.Value
 }
 
 type txdata struct {
@@ -119,7 +121,7 @@ func isProtectedV(V *big.Int) bool {
 		v := V.Uint64()
 		return v != 27 && v != 28
 	}
-	// anything not 27 or 28 are considered unprotected
+	// anything not 27 or 28 is considered protected
 	return true
 }
 
@@ -153,16 +155,21 @@ func (tx *Transaction) UnmarshalJSON(input []byte) error {
 	if err := dec.UnmarshalJSON(input); err != nil {
 		return err
 	}
-	var V byte
-	if isProtectedV(dec.V) {
-		chainID := deriveChainId(dec.V).Uint64()
-		V = byte(dec.V.Uint64() - 35 - 2*chainID)
-	} else {
-		V = byte(dec.V.Uint64() - 27)
+
+	withSignature := dec.V.Sign() != 0 || dec.R.Sign() != 0 || dec.S.Sign() != 0
+	if withSignature {
+		var V byte
+		if isProtectedV(dec.V) {
+			chainID := deriveChainId(dec.V).Uint64()
+			V = byte(dec.V.Uint64() - 35 - 2*chainID)
+		} else {
+			V = byte(dec.V.Uint64() - 27)
+		}
+		if !crypto.ValidateSignatureValues(V, dec.R, dec.S, false) {
+			return ErrInvalidSig
+		}
 	}
-	if !crypto.ValidateSignatureValues(V, dec.R, dec.S, false) {
-		return ErrInvalidSig
-	}
+
 	*tx = Transaction{data: dec}
 	return nil
 }
@@ -170,9 +177,15 @@ func (tx *Transaction) UnmarshalJSON(input []byte) error {
 func (tx *Transaction) Data() []byte       { return common.CopyBytes(tx.data.Payload) }
 func (tx *Transaction) Gas() uint64        { return tx.data.GasLimit }
 func (tx *Transaction) GasPrice() *big.Int { return new(big.Int).Set(tx.data.Price) }
-func (tx *Transaction) Value() *big.Int    { return new(big.Int).Set(tx.data.Amount) }
-func (tx *Transaction) Nonce() uint64      { return tx.data.AccountNonce }
-func (tx *Transaction) CheckNonce() bool   { return true }
+func (tx *Transaction) GasPriceCmp(other *Transaction) int {
+	return tx.data.Price.Cmp(other.data.Price)
+}
+func (tx *Transaction) GasPriceIntCmp(other *big.Int) int {
+	return tx.data.Price.Cmp(other)
+}
+func (tx *Transaction) Value() *big.Int  { return new(big.Int).Set(tx.data.Amount) }
+func (tx *Transaction) Nonce() uint64    { return tx.data.AccountNonce }
+func (tx *Transaction) CheckNonce() bool { return true }
 
 // To returns the recipient address of the transaction.
 // It returns nil if the transaction is a contract creation.
@@ -229,7 +242,7 @@ func (tx *Transaction) AsMessage(s Signer) (Message, error) {
 }
 
 // WithSignature returns a new transaction with the given signature.
-// This signature needs to be formatted as described in the yellow paper (v+27).
+// This signature needs to be in the [R || S || V] format where V is 0 or 1.
 func (tx *Transaction) WithSignature(signer Signer, sig []byte) (*Transaction, error) {
 	r, s, v, err := signer.SignatureValues(tx, sig)
 	if err != nil {
@@ -247,7 +260,18 @@ func (tx *Transaction) Cost() *big.Int {
 	return total
 }
 
-func (tx *Transaction) RawSignatureValues() (*big.Int, *big.Int, *big.Int) {
+func (tx *Transaction) CostU64() (uint64, bool) {
+	if tx.data.Price.BitLen() > 63 || tx.data.Amount.BitLen() > 63 {
+		return 0, false
+	}
+	cost, overflowMul := math.SafeMul(tx.data.Price.Uint64(), tx.data.GasLimit)
+	total, overflowAdd := math.SafeAdd(cost, tx.data.Amount.Uint64())
+	return total, overflowMul || overflowAdd
+}
+
+// RawSignatureValues returns the V, R, S signature values of the transaction.
+// The return values should not be modified by the caller.
+func (tx *Transaction) RawSignatureValues() (v, r, s *big.Int) {
 	return tx.data.V, tx.data.R, tx.data.S
 }
 
